@@ -1,0 +1,22 @@
+[project]
+name = "citeproc-endnote-uv"
+version = "0.1.0"
+description = "Pandoc JSON filter that converts citations to EndNote temporary citations."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [
+  { name = "Jacob Greene" }
+]
+dependencies = []
+
+[project.scripts]
+citeproc-endnote = "citeproc_endnote_uv.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
