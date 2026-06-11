@@ -1,7 +1,7 @@
 [project]
 name = "citeproc-endnote-uv"
 version = "0.1.0"
-description = "Pandoc JSON filter that converts citations to EndNote temporary citations."
+description = "Scientific writing workflow tools for EndNote temporary citations, Word revision passes, and Codex skills."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
@@ -13,6 +13,9 @@ dependencies = []
 [project.scripts]
 citeproc-endnote = "citeproc_endnote_uv.cli:main"
 bib-to-ris = "citeproc_endnote_uv.ris:main"
+docx-reference-list-to-ris = "citeproc_endnote_uv.docx_reference_list_to_ris:main"
+docx-numeric-to-endnote-temp = "citeproc_endnote_uv.docx_numeric_to_endnote_temp:main"
+docx-word-sanity = "citeproc_endnote_uv.docx_word_sanity:main"
 
 [build-system]
 requires = ["hatchling"]
