@@ -33,6 +33,22 @@ COMMENT_PARTS = {
     "word/commentsIds.xml",
 }
 REF_START_RE = re.compile(r"^\s*(\d{1,3})\.\s*(?=[A-Z])")
+REVIEWER_TASKS = {
+    "scientific_rigor_reviewer.md": (
+        "Review only the launcher-scoped revised paragraphs. Be skeptical of new knowledge claims, "
+        "unsupported causal language, overgeneralization across lineages, and claims that simply restate earlier text. "
+        "Report paragraph-specific findings with severity and required fixes."
+    ),
+    "citation_ris_reviewer.md": (
+        "Review citation support and bibliography integrity. Check that each modified statement is supported by "
+        "same/adjacent citations, that citation numbers map to the intended claims, and that the paired RIS has "
+        "complete author metadata without et-al placeholders or missing AU fields."
+    ),
+    "style_reviewer.md": (
+        "Review tone and paragraph logic against the scientific-writing skills. Check topic sentences, concise "
+        "claim-evidence-implication flow, non-redundancy with nearby paragraphs, and consistency with the review style."
+    ),
+}
 
 
 @dataclass(frozen=True)
@@ -168,6 +184,46 @@ def write_comments_markdown(comments: list[CommentAnchor], output: Path) -> None
     output.write_text("\n\n".join(chunks) + ("\n" if chunks else ""), encoding="utf-8")
 
 
+def write_reviewer_tasks(run_dir: Path, stem: str, manifest: dict) -> dict[str, list[str] | str]:
+    tasks_dir = run_dir / "reviewer_tasks"
+    reports_dir = run_dir / "reviewer_reports"
+    tasks_dir.mkdir(exist_ok=True)
+    reports_dir.mkdir(exist_ok=True)
+    task_files: list[str] = []
+    report_files: list[str] = []
+    for filename, instruction in REVIEWER_TASKS.items():
+        report_name = filename.replace("_reviewer.md", "_report.md")
+        task_path = tasks_dir / filename
+        report_path = reports_dir / report_name
+        task_path.write_text(
+            "\n".join(
+                [
+                    f"# {filename.removesuffix('.md').replace('_', ' ').title()}",
+                    "",
+                    instruction,
+                    "",
+                    "## Run Inputs",
+                    f"- Source DOCX: `{manifest['source_docx']}`",
+                    f"- Comments: `{manifest['generated_artifacts']['comments_markdown']}`",
+                    f"- Allowed paragraphs: `{', '.join(str(i) for i in manifest['allowed_paragraphs'])}`",
+                    "",
+                    "## Run Outputs To Review",
+                    f"- Raw revised DOCX: `{manifest['generated_artifacts']['raw_docx']}`",
+                    f"- Final DOCX: `{manifest['generated_artifacts']['final_docx']}`",
+                    f"- RIS: `{manifest['generated_artifacts']['ris']}`",
+                    "",
+                    "Write the report to:",
+                    f"`{report_path.relative_to(run_dir)}`",
+                    "",
+                ]
+            ),
+            encoding="utf-8",
+        )
+        task_files.append(str(task_path.relative_to(run_dir)))
+        report_files.append(str(report_path.relative_to(run_dir)))
+    return {"tasks_dir": str(tasks_dir.relative_to(run_dir)), "task_files": task_files, "required_reports": report_files}
+
+
 def safe_stem(path: Path) -> str:
     return re.sub(r"[^A-Za-z0-9_.-]+", "_", path.stem).strip("._") or "word_doc_revision"
 
@@ -238,6 +294,7 @@ def start(args: argparse.Namespace) -> int:
             "ris": ris.name,
         },
     }
+    manifest["reviewers"] = write_reviewer_tasks(run_dir, stem, manifest)
     manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
 
     print(f"Wrote run directory: {run_dir}")
@@ -245,6 +302,9 @@ def start(args: argparse.Namespace) -> int:
     print(f"Allowed paragraph scope from comments: {allowed_paragraphs or 'none'}")
     print("Next: create the raw revised DOCX inside this run directory, then run finalize.")
     print(f"Finalize command: {Path(sys.argv[0]).name} finalize {manifest_path}")
+    print("Required spawned reviewer task files:")
+    for task in manifest["reviewers"]["task_files"]:
+        print(f"  - {run_dir / task}")
     return 0
 
 
@@ -331,6 +391,7 @@ def finalize(args: argparse.Namespace) -> int:
             str(final_docx),
             "--ris",
             str(ris),
+            "--keep-references",
         ]
     )
     run(["unzip", "-t", str(final_docx)])
@@ -349,6 +410,12 @@ def finalize(args: argparse.Namespace) -> int:
         "appended_reference_paragraphs": sorted(reference_appends),
         "final_docx": final_docx.name,
         "ris": ris.name,
+        "reviewers": manifest.get("reviewers", {}),
+        "missing_reviewer_reports": [
+            report
+            for report in manifest.get("reviewers", {}).get("required_reports", [])
+            if not (run_dir / report).exists() or not (run_dir / report).read_text(encoding="utf-8").strip()
+        ],
         "stale_marker_counts": stale,
     }
     audit_path = run_dir / "finalize_audit.json"

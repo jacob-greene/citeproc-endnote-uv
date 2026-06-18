@@ -131,6 +131,36 @@ def test_numeric_citation_conversion_adds_separator_before_temporary_cite(tmp_pa
     assert "H3K27me3{Cao, 2004}" not in converted
 
 
+def test_numeric_citation_conversion_preserves_prc2_subtype_decimal(tmp_path):
+    source = tmp_path / "source.docx"
+    output = tmp_path / "output.docx"
+    document_xml = """<?xml version="1.0" encoding="UTF-8"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:body>
+    <w:p>
+      <w:r><w:t>MTF2-containing PRC2.</w:t></w:r>
+      <w:r><w:rPr><w:vertAlign w:val="superscript"/></w:rPr><w:t>1</w:t></w:r>
+      <w:r><w:t> supports nucleation</w:t></w:r>
+      <w:r><w:rPr><w:vertAlign w:val="superscript"/></w:rPr><w:t>2</w:t></w:r>
+    </w:p>
+    <w:p><w:r><w:t>1.Cao, R., and Zhang, Y. (2004). Example title. Molecular Cell 15, 57-67.</w:t></w:r></w:p>
+    <w:p><w:r><w:t>2.Pasini, D., and Helin, K. (2004). Second title. EMBO Journal 23, 4061-4071.</w:t></w:r></w:p>
+  </w:body>
+</w:document>
+"""
+    with ZipFile(source, "w", ZIP_DEFLATED) as zf:
+        zf.writestr("word/document.xml", document_xml)
+
+    convert(source, output)
+
+    with ZipFile(output) as zf:
+        root = ET.fromstring(zf.read("word/document.xml"))
+    ns = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
+    converted = "".join(t.text or "" for t in root.findall(".//w:t", ns))
+    assert "PRC2.1 supports nucleation {Pasini, 2004}" in converted
+    assert "PRC2. {Cao, 2004}" not in converted
+
+
 def test_numeric_citation_conversion_uses_ris_and_strips_stale_endnote_parts(tmp_path):
     source = tmp_path / "source.docx"
     output = tmp_path / "output.docx"

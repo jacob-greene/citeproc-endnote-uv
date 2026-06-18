@@ -23,6 +23,9 @@ ET.register_namespace("w", W_URI)
 
 CITE_RE = re.compile(r"^\s*\d+(?:-\d+)?(?:,\d+(?:-\d+)?)*\s*$")
 REF_START_RE = re.compile(r"(?<![A-Za-z0-9])(\d{1,3})\.\s*(?=[A-Z])")
+TOKEN_ENDING_WITH_BIO_NUMBER_RE = re.compile(
+    r"(?:PRC\d+|H\d(?:\.\d)?K27(?:me\d)?|H\d(?:\.\d)?K27M|H\d(?:\.\d)?)\.$"
+)
 
 
 @dataclass(frozen=True)
@@ -213,6 +216,13 @@ def make_temp_citation(
     return "{" + "; ".join(parts) + "}"
 
 
+def is_biological_decimal_label(preceding: str, run_text: str) -> bool:
+    return (
+        bool(re.fullmatch(r"\s*\d+\s*", run_text))
+        and bool(TOKEN_ENDING_WITH_BIO_NUMBER_RE.search(preceding.rstrip()))
+    )
+
+
 def set_run_text(run: ET.Element, text: str) -> None:
     rpr = run.find(f"{W}rPr")
     if rpr is not None:
@@ -377,6 +387,10 @@ def convert(
             for run in paragraph.findall(f"{W}r"):
                 run_text = text_of(run)
                 if is_superscript_run(run) and CITE_RE.match(run_text):
+                    if is_biological_decimal_label(preceding, run_text):
+                        set_run_text(run, run_text.strip())
+                        preceding += run_text.strip()
+                        continue
                     citation = make_temp_citation(
                         run_text,
                         references,
