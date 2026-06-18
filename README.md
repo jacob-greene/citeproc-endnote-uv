@@ -25,20 +25,24 @@ Simple workflow chart:
 Commented Word draft
         |
         v
-docx-extract-comments
+pandoc-word-revision start
+        |
+        +--> source markdown
+        +--> comments markdown/json
+        +--> style-reference.docx
+        +--> optional complete citation_metadata.ris
         |
         v
-Agent revision workflow
+Agent revision workflow over run-local markdown
         |
         +--> comment plan and outline
         +--> evidence and specificity check
         +--> rigor critique
         +--> tone and concision pass
         |
-        v
-Revised Word draft with EndNote temporary citations
+Pandoc recompiled Word draft with EndNote temporary citations
         |
-        +--> paired RIS generated from the Word reference list
+        +--> paired RIS generated from current references plus pinned metadata
         |
         v
 Import RIS into EndNote, then update citations in Word
@@ -53,13 +57,19 @@ The agent workflow has four explicit passes:
 
 The final implementation should be based only on the provided commented draft and its comments. Do not rebuild from stale Markdown, TeX, or archived Word drafts unless those files were generated from the same current `.docx`.
 
-Extract comments directly from the Word file before planning revisions:
+Launch the Pandoc-centered Word workflow before planning revisions:
 
 ```bash
-docx-extract-comments commented-draft.docx -o comments.md --format markdown
+pandoc-word-revision start commented-draft.docx \
+  --output-stem manuscript_v4 \
+  --metadata-ris complete-current-library.ris
 ```
 
-Do not rely on Pandoc or plain-text exports to find Word comments. Pandoc can preserve document text while hiding comment text and comment anchors, which will make a commented draft look un-commented.
+This creates a run directory containing `manuscript_v4.source.md`,
+`manuscript_v4.revised.md`, `manuscript_v4.comments.md`,
+`manuscript_v4.comments.json`, `style-reference.docx`, and a manifest. Word
+comments are extracted directly from the DOCX; Pandoc supplies the editable
+markdown and the Word style reference.
 
 ## Install
 
@@ -101,16 +111,29 @@ bib-to-ris references.bib references.ris
 
 ## Word draft to EndNote-ready Word draft
 
-For workflows that begin from a `.docx` draft with numeric superscript citations and a numbered reference list:
+For workflows that begin from a `.docx` draft with numeric superscript citations and a numbered reference list, use the Pandoc launcher:
 
 ```bash
-docx-extract-comments commented-draft.docx -o comments.md --format markdown
-docx-reference-list-to-ris revised-with-reference-list.docx revised.ris
-docx-numeric-to-endnote-temp revised-with-reference-list.docx revised-endnote-temp.docx
-docx-word-sanity revised-endnote-temp.docx
+pandoc-word-revision start commented-draft.docx \
+  --output-stem manuscript_v4 \
+  --metadata-ris complete-current-library.ris
+
+# edit manuscript_v4_pandoc_revision_run/manuscript_v4.revised.md
+
+pandoc-word-revision finalize manuscript_v4_pandoc_revision_run/manifest.json
 ```
 
-`docx-reference-list-to-ris` reads the numbered reference list from the Word document and writes a matching RIS file. This is useful when a collaborator manually adds references to Word and those records need to propagate into EndNote import.
+`pandoc-word-revision start` extracts text and style through Pandoc, extracts
+comments directly from Word XML, and pins optional complete citation metadata
+inside the run directory. `finalize` recompiles the revised markdown with
+Pandoc, generates the paired RIS from the current recompiled reference list,
+uses the pinned metadata overlay to restore complete author/DOI fields, converts
+numeric citations to EndNote temporary citations, and runs sanity/sync checks.
+
+`docx-reference-list-to-ris` remains available as a lower-level utility. It
+reads the numbered reference list from a Word document and writes a matching RIS
+file; pass `--metadata-ris` when the Word bibliography contains `et al.` or
+otherwise abbreviated metadata.
 
 `docx-numeric-to-endnote-temp` converts numeric superscript citations such as `6,7` into EndNote temporary citations such as `{McCabe, 2012, Mutation of A677...; McCabe, 2012, EZH2 inhibition...}`. When two distinct papers share the same first author and year, the converter includes the title to make EndNote matching unique. Duplicate bibliography entries for the same paper remain concise.
 
