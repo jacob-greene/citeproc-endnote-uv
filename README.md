@@ -31,6 +31,7 @@ pandoc-word-revision start
         +--> comments markdown/json
         +--> style-reference.docx
         +--> citation_metadata.ris extracted from embedded EndNote fields
+        +--> agent_workflow tasks and audit template
         |
         v
 Agent revision workflow over run-local markdown
@@ -56,6 +57,12 @@ The agent workflow has four explicit passes:
 3. **Rigor critique**: review the proposed changes for scientific accuracy, overclaiming, missing caveats, and accidental changes to un-commented sections.
 4. **Tone and concision**: make the prose direct, readable, and concise while preserving the scientific meaning.
 
+`pandoc-word-revision finalize` enforces this workflow. It refuses to compile
+the final Word/RIS outputs until `agent_workflow/agent_workflow_audit.json`
+exists, names the same source DOCX hash, hashes the exact `*.revised.md` being
+finalized, marks all four passes complete, points to non-empty pass reports, and
+sets the required overall readiness checks to true.
+
 The final implementation should be based only on the provided commented draft and its comments. Do not rebuild from stale Markdown, TeX, or archived Word drafts unless those files were generated from the same current `.docx`.
 
 Launch the Pandoc-centered Word workflow before planning revisions:
@@ -68,9 +75,11 @@ pandoc-word-revision start commented-draft.docx \
 This creates a run directory containing `manuscript_v4.source.md`,
 `manuscript_v4.revised.md`, `manuscript_v4.comments.md`,
 `manuscript_v4.comments.json`, `style-reference.docx`,
-`citation_metadata.ris`, `citation_metadata_audit.json`, and a manifest. Word
-comments and complete citation metadata are extracted directly from the DOCX;
-Pandoc supplies the editable markdown and the Word style reference.
+`citation_metadata.ris`, `citation_metadata_audit.json`, `agent_workflow/`, and
+a manifest. Word comments and complete citation metadata are extracted directly
+from the DOCX; Pandoc supplies the editable markdown and the Word style
+reference. The `agent_workflow/` directory contains task files, report paths,
+and an audit template that must be completed before finalization.
 
 ## Install
 
@@ -126,10 +135,11 @@ pandoc-word-revision finalize manuscript_v4_pandoc_revision_run/manifest.json
 `pandoc-word-revision start` extracts text and style through Pandoc, extracts
 comments directly from Word XML, and extracts complete citation metadata from
 embedded EndNote field records in the same source DOCX. `finalize` recompiles
-the revised markdown with Pandoc, generates the paired RIS from the current
-recompiled reference list, uses the run-local metadata overlay to restore
-complete author/DOI fields, converts numeric citations to EndNote temporary
-citations, and runs sanity/sync checks.
+the revised markdown with Pandoc only after validating the required agent
+workflow audit. It then generates the paired RIS from the current recompiled
+reference list, uses the run-local metadata overlay to restore complete
+author/DOI fields, converts numeric citations to EndNote temporary citations,
+and runs sanity/sync checks.
 
 Citation handling is deterministic for a fixed run directory. The recompiled
 Word document defines which references exist and their numbering/order. The

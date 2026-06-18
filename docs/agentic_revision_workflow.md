@@ -16,7 +16,7 @@ manuscript_v4.ris
 - Exactly one content input: the current commented Word draft.
 - Text/style extraction generated from that Word draft by `pandoc-word-revision start`.
 - Comment extraction generated from that same Word draft by `pandoc-word-revision start`.
-- A pinned complete RIS metadata overlay may be supplied at launch with `--metadata-ris`; it is copied into the run as `citation_metadata.ris` and used only to fill complete metadata for references present in the current recompiled Word document.
+- Complete citation metadata is extracted from embedded EndNote fields in the current source DOCX into `citation_metadata.ris`. A `--metadata-ris` file is only a fallback for documents with no embedded EndNote records.
 - Do not use archived DOCX files, older Markdown exports, TeX sources, response files, cached Asta evidence, or unpinned external citation files as content or citation sources for the revision pass.
 - The paired RIS must be generated from the reference list in the same revised Word document produced during the pass, optionally enriched by the run-local pinned metadata RIS and explicitly recorded Asta additions.
 - The scientific-writing skills in `codex-skills/`, especially `draft-scientific-paper` and `edit-scientific-prose`.
@@ -27,17 +27,18 @@ Launch the pass from the current Word document before planning edits:
 
 ```bash
 pandoc-word-revision start commented-draft.docx \
-  --output-stem manuscript_v4 \
-  --metadata-ris complete-current-library.ris
+  --output-stem manuscript_v4
 ```
 
-This command creates a run directory, copies the source Word document into it, records the source hash, extracts Word comments, exports the document text/styles to Pandoc markdown, saves `style-reference.docx`, copies the optional complete metadata RIS, and writes a manifest naming the permitted generated artifacts for that pass.
+This command creates a run directory, copies the source Word document into it, records the source hash, extracts Word comments, exports the document text/styles to Pandoc markdown, saves `style-reference.docx`, extracts embedded EndNote metadata into `citation_metadata.ris`, creates `agent_workflow/` task files plus an audit template, and writes a manifest naming the permitted generated artifacts for that pass.
 
 Do not use hand-created Markdown exports, archive RIS files, prior response files, or cached evidence as the comment or content source. The only supported Markdown source is the run-local markdown produced by `pandoc-word-revision start` from the current `.docx`.
 
 ## Agent Roles
 
 Every revision pass must run all four roles below in order. Do not skip directly from comment extraction to implementation, even when the requested change looks mechanical or citation-only. If a pass starts from a draft with no active Word comments, define the revision scope from the user's request, the previous comment-response summary, and the paragraphs changed in the prior pass; then run the same four roles on that explicit scope.
+
+The Pandoc launcher enforces this. Before finalization, `agent_workflow/agent_workflow_audit.json` must exist, must hash the exact `*.revised.md` being finalized, must mark all four passes as completed, and must point to non-empty report files in `agent_workflow/reports/`.
 
 1. Comment interpretation and revision planning agent
    - Read the `*.comments.md` and `*.comments.json` outputs for every Word comment and its surrounding paragraph.
@@ -77,7 +78,7 @@ Every revision pass must run all four roles below in order. Do not skip directly
 - Do not introduce broad synthesis claims during implementation unless the rigor critique step explicitly approves the claim and identifies the supporting citations.
 - Do not rebuild prose from older TeX or Markdown. The active prose source after launch is the run-local revised markdown generated from the current Word document.
 - Every pass must emit a revised `.docx` and a matching `.ris` generated from the full numbered reference list in the current recompiled Word document for that pass. The RIS must include every numbered reference in that Word bibliography, not only cited records, and the exporter must fail rather than silently skip malformed entries.
-- Do not merge, backfill, or repair the pass RIS from an unpinned archive RIS, another pass, BibTeX, EndNote library, or web/Asta lookup. If complete metadata is needed, provide a current complete RIS at launch with `--metadata-ris`; the launcher copies it into the run and uses title matching only for references present in the current recompiled Word document. New Asta citations must be recorded explicitly in `asta_reference_additions.json` and inserted into the current revised markdown/reference list.
+- Do not merge, backfill, or repair the pass RIS from an archive RIS, another pass, BibTeX, EndNote library, or web/Asta lookup. Complete metadata should come from embedded EndNote records in the current source DOCX. New Asta citations must be recorded explicitly in `asta_reference_additions.json` and inserted into the current revised markdown/reference list.
 - If the user requests a writing-methods or AI-use statement, append it after the numbered bibliography as a non-reference methods note and link to the run manifest or workflow documentation. The RIS exporter must stop at the end of the numbered bibliography so this statement cannot be absorbed into the last reference.
 - Keep paragraph length appropriate for the document; for dense scientific prose, 4-5 sentences is a useful default ceiling.
 - Before converting numeric citations to EndNote temporary citations, run the modified-statement support check on the revised raw DOCX. Any modified sentence without a same-sentence or adjacent citation must be resolved by checking nearby existing citations, adding a citation, softening/removing the claim, or requerying literature tools for targeted evidence.
@@ -94,8 +95,7 @@ When a revision pass starts from a Word draft with numeric superscript citations
 
 ```bash
 pandoc-word-revision start commented-draft.docx \
-  --output-stem manuscript_v4 \
-  --metadata-ris complete-current-library.ris
+  --output-stem manuscript_v4
 ```
 
 Revise only the run-local markdown named in the manifest:
@@ -108,6 +108,16 @@ Then finalize the pass:
 
 ```bash
 pandoc-word-revision finalize manuscript_v4_pandoc_revision_run/manifest.json
+```
+
+Finalization is blocked until the agent workflow audit is complete:
+
+```text
+agent_workflow/agent_workflow_audit.json
+agent_workflow/reports/comment_plan_report.md
+agent_workflow/reports/evidence_specificity_report.md
+agent_workflow/reports/rigor_critique_report.md
+agent_workflow/reports/tone_concision_report.md
 ```
 
 The finalizer runs:

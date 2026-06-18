@@ -33,6 +33,45 @@ from citeproc_endnote_uv.strip_docx_comments import strip_comments
 SCRIPT_DIR = Path(__file__).resolve().parent
 PANDOC_FROM = "docx+styles"
 PANDOC_TO = "markdown+bracketed_spans+fenced_divs+link_attributes+pipe_tables+tex_math_single_backslash"
+AGENT_WORKFLOW_PASSES = [
+    {
+        "name": "comment_interpretation_and_revision_planning",
+        "report": "comment_plan_report.md",
+        "required_checks": ["comments_addressed", "revision_scope_defined", "source_docx_only"],
+        "instruction": (
+            "Read the run-local source markdown, revised markdown, comments markdown/json, and manifest. "
+            "Produce a comment-keyed plan, current outline, exact allowed revision scope, and any justified "
+            "adjacent-paragraph exceptions."
+        ),
+    },
+    {
+        "name": "evidence_and_specificity",
+        "report": "evidence_specificity_report.md",
+        "required_checks": ["modified_claims_citation_checked", "unsupported_claims_resolved", "source_docx_only"],
+        "instruction": (
+            "Check each modified claim for same-sentence or adjacent citation support. If nearby existing "
+            "citations do not support the claim, require softening/removal or explicitly recorded new evidence."
+        ),
+    },
+    {
+        "name": "rigor_critique",
+        "report": "rigor_critique_report.md",
+        "required_checks": ["rigor_approved", "new_knowledge_claims_skeptically_reviewed", "uncommented_changes_reviewed"],
+        "instruction": (
+            "Be highly skeptical of new knowledge claims, broad causal language, conserved/universal claims, "
+            "and accidental edits to uncommented text. Approve only narrow claims with explicit support."
+        ),
+    },
+    {
+        "name": "tone_and_concision",
+        "report": "tone_concision_report.md",
+        "required_checks": ["tone_reviewed", "redundancy_checked", "comment_scope_preserved"],
+        "instruction": (
+            "Review topic sentences, paragraph flow, concision, and thesis tone. Flag restatement of nearby "
+            "material and tone drift."
+        ),
+    },
+]
 
 
 def run(command: list[str]) -> None:
@@ -69,6 +108,154 @@ def ensure_inside_run_dir(path: Path, run_dir: Path, label: str) -> Path:
 
 def write_json(path: Path, data: object) -> None:
     path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+
+
+def relative_to_run(path: Path, run_dir: Path) -> str:
+    return str(path.relative_to(run_dir))
+
+
+def write_agent_workflow_tasks(run_dir: Path, manifest: dict) -> dict[str, object]:
+    workflow_dir = run_dir / "agent_workflow"
+    tasks_dir = workflow_dir / "tasks"
+    reports_dir = workflow_dir / "reports"
+    tasks_dir.mkdir(parents=True, exist_ok=True)
+    reports_dir.mkdir(parents=True, exist_ok=True)
+
+    task_files: list[str] = []
+    required_reports: list[str] = []
+    passes: list[dict[str, object]] = []
+    artifacts = manifest["generated_artifacts"]
+    for workflow_pass in AGENT_WORKFLOW_PASSES:
+        task_path = tasks_dir / f"{workflow_pass['name']}.md"
+        report_path = reports_dir / str(workflow_pass["report"])
+        task_path.write_text(
+            "\n".join(
+                [
+                    f"# {str(workflow_pass['name']).replace('_', ' ').title()}",
+                    "",
+                    str(workflow_pass["instruction"]),
+                    "",
+                    "## Required Inputs",
+                    f"- Manifest: `manifest.json`",
+                    f"- Source DOCX: `{manifest['source_docx']}`",
+                    f"- Source markdown: `{artifacts['source_markdown']}`",
+                    f"- Revised markdown: `{artifacts['revised_markdown']}`",
+                    f"- Comments markdown: `{manifest['comments']['markdown']}`",
+                    f"- Comments JSON: `{manifest['comments']['json']}`",
+                    f"- Citation metadata RIS: `{manifest['citation_policy']['metadata_overlay_ris']}`",
+                    "",
+                    "## Required Checks",
+                    *[f"- `{check}`" for check in workflow_pass["required_checks"]],
+                    "",
+                    "Write the report to:",
+                    f"`{relative_to_run(report_path, run_dir)}`",
+                    "",
+                ]
+            ),
+            encoding="utf-8",
+        )
+        task_files.append(relative_to_run(task_path, run_dir))
+        report_rel = relative_to_run(report_path, run_dir)
+        required_reports.append(report_rel)
+        passes.append(
+            {
+                "name": workflow_pass["name"],
+                "required_checks": workflow_pass["required_checks"],
+                "report": report_rel,
+            }
+        )
+
+    audit_template = {
+        "workflow": "pandoc-word-revision-agent-workflow",
+        "source_sha256": manifest["source_sha256"],
+        "revised_markdown": artifacts["revised_markdown"],
+        "revised_markdown_sha256": "<fill after final edits>",
+        "passes": [
+            {
+                "name": workflow_pass["name"],
+                "status": "pending",
+                "report": f"agent_workflow/reports/{workflow_pass['report']}",
+                "checks": {check: False for check in workflow_pass["required_checks"]},
+            }
+            for workflow_pass in AGENT_WORKFLOW_PASSES
+        ],
+        "overall": {
+            "all_comments_addressed": False,
+            "modified_claims_have_adjacent_citation_or_resolution": False,
+            "uncommented_changes_justified": False,
+            "citation_integrity_reviewed": False,
+            "ready_for_finalize": False,
+        },
+    }
+    template_path = workflow_dir / "agent_workflow_audit.template.json"
+    write_json(template_path, audit_template)
+    return {
+        "required": True,
+        "tasks_dir": relative_to_run(tasks_dir, run_dir),
+        "task_files": task_files,
+        "required_reports": required_reports,
+        "audit_template": relative_to_run(template_path, run_dir),
+        "audit_file": "agent_workflow/agent_workflow_audit.json",
+        "required_passes": passes,
+    }
+
+
+def validate_agent_workflow(run_dir: Path, manifest: dict, revised_markdown: Path) -> dict:
+    workflow = manifest.get("agent_workflow", {})
+    if not workflow.get("required", False):
+        raise SystemExit("Manifest does not require the agent workflow; rerun `pandoc-word-revision start`.")
+
+    audit_path = ensure_inside_run_dir(run_dir / workflow.get("audit_file", ""), run_dir, "agent workflow audit")
+    if not audit_path.exists():
+        raise SystemExit(
+            "Missing required agent workflow audit. Complete the four-pass agent workflow and write "
+            f"{audit_path} before finalize."
+        )
+    audit = json.loads(audit_path.read_text(encoding="utf-8"))
+    if audit.get("workflow") != "pandoc-word-revision-agent-workflow":
+        raise SystemExit("Agent workflow audit has the wrong workflow identifier.")
+    if audit.get("source_sha256") != manifest["source_sha256"]:
+        raise SystemExit("Agent workflow audit source hash does not match the launch manifest.")
+    if audit.get("revised_markdown") != manifest["generated_artifacts"]["revised_markdown"]:
+        raise SystemExit("Agent workflow audit does not name the manifest revised markdown.")
+    if audit.get("revised_markdown_sha256") != sha256(revised_markdown):
+        raise SystemExit("Agent workflow audit hash does not match the revised markdown being finalized.")
+
+    passes_by_name = {item.get("name"): item for item in audit.get("passes", []) if isinstance(item, dict)}
+    missing: list[str] = []
+    incomplete: list[str] = []
+    for required in workflow.get("required_passes", []):
+        name = required["name"]
+        item = passes_by_name.get(name)
+        if item is None:
+            missing.append(name)
+            continue
+        if item.get("status") != "completed":
+            incomplete.append(f"{name}: status is not completed")
+        report = item.get("report") or required.get("report")
+        report_path = ensure_inside_run_dir(run_dir / report, run_dir, f"{name} report")
+        if not report_path.exists() or not report_path.read_text(encoding="utf-8").strip():
+            incomplete.append(f"{name}: missing or empty report {report}")
+        checks = item.get("checks", {})
+        for check in required.get("required_checks", []):
+            if not checks.get(check):
+                incomplete.append(f"{name}: required check `{check}` is not true")
+    if missing or incomplete:
+        detail = "\n".join([*(f"missing pass: {name}" for name in missing), *incomplete])
+        raise SystemExit(f"Agent workflow is incomplete:\n{detail}")
+
+    overall = audit.get("overall", {})
+    required_overall = [
+        "all_comments_addressed",
+        "modified_claims_have_adjacent_citation_or_resolution",
+        "uncommented_changes_justified",
+        "citation_integrity_reviewed",
+        "ready_for_finalize",
+    ]
+    failed_overall = [key for key in required_overall if not overall.get(key)]
+    if failed_overall:
+        raise SystemExit(f"Agent workflow audit is not ready for finalize; false checks: {failed_overall}")
+    return audit
 
 
 def pandoc_docx_to_markdown(source_docx: Path, markdown: Path, media_dir: Path) -> list[str]:
@@ -198,11 +385,16 @@ def start(args: argparse.Namespace) -> int:
             "ris": ris.name,
         },
     }
+    manifest["agent_workflow"] = write_agent_workflow_tasks(run_dir, manifest)
     manifest_path = run_dir / "manifest.json"
     write_json(manifest_path, manifest)
 
     print(f"Wrote run directory: {run_dir}")
     print(f"Revise markdown: {revised_markdown}")
+    print("Required agent workflow tasks:")
+    for task in manifest["agent_workflow"]["task_files"]:
+        print(f"  - {run_dir / task}")
+    print(f"Agent workflow audit required before finalize: {run_dir / manifest['agent_workflow']['audit_file']}")
     print(f"Finalize with: pandoc-word-revision finalize {manifest_path}")
     return 0
 
@@ -227,6 +419,8 @@ def finalize(args: argparse.Namespace) -> int:
     reference_doc = ensure_inside_run_dir(run_dir / manifest["pandoc"]["reference_doc"], run_dir, "reference DOCX")
     if not revised_markdown.exists():
         raise SystemExit(f"Missing revised markdown: {revised_markdown}")
+
+    agent_workflow_audit = validate_agent_workflow(run_dir, manifest, revised_markdown)
 
     run(pandoc_markdown_to_docx(revised_markdown, raw_docx, reference_doc))
     stripped_raw = raw_docx.with_name(f"{raw_docx.stem}.stripped{raw_docx.suffix}")
@@ -274,6 +468,8 @@ def finalize(args: argparse.Namespace) -> int:
         "final_docx": final_docx.name,
         "ris": ris.name,
         "citation_metadata_ris": metadata_ris.name if metadata_ris is not None else None,
+        "agent_workflow_audit": manifest["agent_workflow"]["audit_file"],
+        "agent_workflow_passes": [item["name"] for item in agent_workflow_audit["passes"]],
         "temporary_citation_determinism_check": {
             "repeated_conversion": True,
             "temporary_citation_entries": len(primary_entries),
