@@ -144,14 +144,31 @@ asta-revision run commented-draft.docx --output-stem manuscript_v4
 
 ## Install
 
+One-step install of the package and its external tools:
+
+```bash
+scripts/install.sh            # editable install (uv pip install -e .)
+scripts/install.sh --tool     # standalone (uv tool install .)
+```
+
+Or just the Python package (pandoc comes bundled via the `pypandoc-binary` wheel):
+
 ```bash
 uv tool install .
 # or, for development:
 uv pip install -e .
 ```
 
-Requirements: `pandoc` and `claude` on PATH, plus `bip` (bipartite) if you use
-the evidence resolver (see below).
+Tooling:
+
+- **pandoc** — ships with the package via the `pypandoc-binary` wheel, so it
+  installs automatically with `uv`. A `pandoc` already on PATH is preferred.
+- **bip** (bipartite) — a Go binary used by the evidence resolver. `scripts/install.sh`
+  installs it via `go install github.com/matsen/bipartite/cmd/bip@latest` (needs
+  Go 1.24+; or use a prebuilt release). Configure `~/.config/bip/config.yml`
+  with `nexus_path`, `s2_api_key`, `asta_api_key`.
+- **claude** — the Claude Code CLI, installed separately (npm); the agent passes
+  run via `claude -p`.
 
 ## Evidence resolution with bipartite
 

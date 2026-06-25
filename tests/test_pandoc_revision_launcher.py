@@ -30,8 +30,8 @@ def test_pandoc_docx_to_markdown_preserves_styles_and_extracts_media(tmp_path):
 
     command = pandoc_docx_to_markdown(source, markdown, media)
 
-    assert command == [
-        "pandoc",
+    assert Path(command[0]).name in {"pandoc", "pandoc.exe"}
+    assert command[1:] == [
         "-f",
         PANDOC_FROM,
         "-t",
@@ -51,8 +51,8 @@ def test_pandoc_markdown_to_docx_uses_saved_reference_doc(tmp_path):
 
     command = pandoc_markdown_to_docx(markdown, output, reference)
 
-    assert command == [
-        "pandoc",
+    assert Path(command[0]).name in {"pandoc", "pandoc.exe"}
+    assert command[1:] == [
         "-f",
         PANDOC_TO,
         "-t",

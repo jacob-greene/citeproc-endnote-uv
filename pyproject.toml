@@ -8,7 +8,12 @@ license = { text = "MIT" }
 authors = [
   { name = "Jacob Greene" }
 ]
-dependencies = []
+# pandoc ships with the repo via the pypandoc-binary wheel (bundled pandoc binary).
+# bip (bipartite) is a Go binary and claude (Claude Code) is an npm CLI; both are
+# installed by scripts/install.sh, not pip. See README.
+dependencies = [
+  "pypandoc-binary>=1.13",
+]
 
 [project.scripts]
 docx-reference-list-to-ris = "asta_revision_workflow.docx_reference_list_to_ris:main"

@@ -234,9 +234,25 @@ def require_docx(path: Path) -> None:
         raise SystemExit(f"Source must be a .docx file: {path}")
 
 
+def pandoc_executable() -> str:
+    """Resolve the pandoc binary: PATH first, then the bundled pypandoc-binary."""
+    found = shutil.which("pandoc")
+    if found:
+        return found
+    try:
+        import pypandoc
+
+        return pypandoc.get_pandoc_path()
+    except Exception:
+        return ""
+
+
 def require_pandoc() -> None:
-    if shutil.which("pandoc") is None:
-        raise SystemExit("pandoc is required for asta-revision but was not found on PATH.")
+    if not pandoc_executable():
+        raise SystemExit(
+            "pandoc is required for asta-revision but was not found on PATH or via the "
+            "bundled pypandoc-binary. Install pandoc, or `uv pip install -e .` to get the bundled binary."
+        )
 
 
 def ensure_inside_run_dir(path: Path, run_dir: Path, label: str) -> Path:
@@ -970,7 +986,7 @@ def validate_agent_workflow(run_dir: Path, manifest: dict, revised_markdown: Pat
 
 def pandoc_docx_to_markdown(source_docx: Path, markdown: Path, media_dir: Path) -> list[str]:
     return [
-        "pandoc",
+        pandoc_executable() or "pandoc",
         "-f",
         PANDOC_FROM,
         "-t",
@@ -985,7 +1001,7 @@ def pandoc_docx_to_markdown(source_docx: Path, markdown: Path, media_dir: Path) 
 
 def pandoc_markdown_to_docx(markdown: Path, output_docx: Path, reference_docx: Path) -> list[str]:
     return [
-        "pandoc",
+        pandoc_executable() or "pandoc",
         "-f",
         PANDOC_TO,
         "-t",
